@@ -7,7 +7,7 @@ defmodule GRPC.Transport.HTTP2 do
   alias GRPC.Status
 
   def server_headers() do
-    %{":status" => 200, "content-type" => "application/grpc+proto"}
+    %{"content-type" => "application/grpc+proto"}
   end
 
   @spec server_trailers(integer, String.t()) :: map
@@ -21,10 +21,10 @@ defmodule GRPC.Transport.HTTP2 do
   @spec client_headers(GRPC.Client.Stream.t(), map) :: [{String.t(), String.t()}]
   def client_headers(%{channel: channel, path: path} = s, opts \\ %{}) do
     [
-      {":method", "POST"},
-      {":scheme", channel.scheme},
-      {":path", path},
-      {":authority", channel.host}
+      # {":method", "POST"},
+      # {":scheme", channel.scheme},
+      # {":path", path},
+      # {":authority", channel.host}
     ] ++ client_headers_without_reserved(s, opts)
   end
 
