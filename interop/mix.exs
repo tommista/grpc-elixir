@@ -22,7 +22,9 @@ defmodule Interop.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:grpc, path: ".."}
+      {:grpc, path: ".."},
+      {:gun, github: "ninenines/gun", override: true},
+      {:cowlib, github: "ninenines/cowlib", override: true}
     ]
   end
 end
