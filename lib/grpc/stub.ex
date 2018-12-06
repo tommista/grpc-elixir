@@ -161,7 +161,21 @@ defmodule GRPC.Stub do
 
     opts = parse_req_opts(opts)
 
-    do_call(req_stream, res_stream, stream, request, opts)
+    case Map.get(opts, :parent, nil) do
+      nil ->
+        do_call(req_stream, res_stream, stream, request, opts)
+
+      pid ->
+        {:ok, spawn(fn ->
+          case do_call(req_stream, res_stream, stream, request, opts) do
+            :ok ->
+              :ok
+
+            resp ->
+              send(pid, {:grpc_data, resp})
+          end
+        end)}
+    end
   end
 
   defp do_call(false, _, %{marshal: marshal, channel: channel} = stream, request, opts) do
@@ -347,6 +361,57 @@ defmodule GRPC.Stub do
     end
   end
 
+  defp handle_async_stream(info = %{unmarshal: unmarshal, channel: channel, payload: payload}, opts = %{parent: parent}, acc) do
+    case channel.adapter.recv_data_or_trailers(channel.adapter_payload, payload, opts) do
+      {:data, data} ->
+        if GRPC.Message.complete?(data) do
+          reply = decode_data(data, unmarshal)
+          {{:ok, reply}, %{buffer: "", message_length: -1}}
+        else
+          handle_incomplete_data(acc, data, unmarshal)
+        end
+
+      {:trailers, trailers} ->
+        trailers = GRPC.Transport.HTTP2.decode_headers(trailers)
+
+        case parse_trailers(trailers) do
+          :ok ->
+            if opts[:return_headers] do
+              {{:trailers, trailers}, Map.put(acc, :fin, true)}
+            else
+              {nil, Map.put(acc, :fin, true)}
+            end
+
+          error ->
+            {error, Map.put(acc, :fin, true)}
+        end
+
+      error = {:error, _} ->
+        {error, Map.put(acc, :fin, true)}
+    end
+    |> case do
+      {:skip, acc} ->
+        handle_async_stream(info, opts, acc)
+
+      {nil, %{fin: true}} ->
+        send(parent, :grpc_fin)
+
+      {resp, %{fin: true}} ->
+        send(parent, {:grpc_data, resp})
+        send(parent, :grpc_fin)
+
+      {resp, acc} ->
+        send(parent, {:grpc_data, resp})
+        handle_async_stream(info, opts, acc)
+    end
+
+    :ok
+  end
+
+  defp response_stream(info = %{unmarshal: _unmarshal, channel: _channel, payload: _payload}, opts = %{parent: _parent}) do
+    handle_async_stream(info, opts, %{buffer: "", message_length: -1, fin: false})
+  end
+
   defp response_stream(%{unmarshal: unmarshal, channel: channel, payload: payload}, opts) do
     enum =
       Stream.unfold(%{buffer: "", message_length: -1, fin: false}, fn
@@ -414,6 +479,10 @@ defmodule GRPC.Stub do
 
   defp parse_req_opts(list) when is_list(list) do
     parse_req_opts(list, %{timeout: @default_timeout})
+  end
+
+  defp parse_req_opts([{:parent, pid} | t], acc) when is_pid(pid) do
+    parse_req_opts(t, Map.put(acc, :parent, pid))
   end
 
   defp parse_req_opts([{:timeout, timeout} | t], acc) do
