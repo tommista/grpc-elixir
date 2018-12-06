@@ -168,7 +168,7 @@ defmodule GRPC.Stub do
       pid ->
         {:ok, spawn(fn ->
           case do_call(req_stream, res_stream, stream, request, opts) do
-            :ok ->
+            {:ok, :ok} ->
               :ok
 
             resp ->
@@ -361,7 +361,7 @@ defmodule GRPC.Stub do
     end
   end
 
-  defp handle_async_stream(info = %{unmarshal: unmarshal, channel: channel, payload: payload}, opts = %{parent: parent}, acc) do
+  defp handle_async_stream(info = %{unmarshal: _unmarshal, channel: _channel, payload: _payload}, opts = %{parent: parent}, acc) do
     handle_stream_data(info, opts, acc)
     |> case do
       {:skip, acc} ->
@@ -399,7 +399,7 @@ defmodule GRPC.Stub do
     Stream.reject(enum, &match?(:skip, &1))
   end
 
-  defp handle_stream_data(info = %{unmarshal: unmarshal, channel: channel, payload: payload}, opts , acc) do
+  defp handle_stream_data(%{unmarshal: unmarshal, channel: channel, payload: payload}, opts , acc) do
     case channel.adapter.recv_data_or_trailers(channel.adapter_payload, payload, opts) do
       {:data, data} ->
         if GRPC.Message.complete?(data) do
